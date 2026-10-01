@@ -106,6 +106,53 @@
       gap: 0.45rem;
       margin-bottom: 1.1rem;
     }
+    .chips-dye {
+      gap: 0.4rem;
+      margin-bottom: 0.6rem;
+    }
+    .chip-dye {
+      border-style: dashed;
+      font-size: 0.82rem;
+      padding: 0.3rem 0.78rem;
+      background: rgba(11, 28, 44, 0.22);
+    }
+    .chip-dye.on {
+      border-style: solid;
+      background: linear-gradient(135deg, rgba(26, 122, 92, 0.82), rgba(31, 77, 107, 0.92));
+    }
+    .three-way {
+      display: flex;
+      align-items: center;
+      gap: 0.9rem;
+      flex-wrap: wrap;
+      margin: 0.2rem 0 1.05rem;
+      padding: 0.6rem 0.95rem;
+      border: 1px solid rgba(216, 235, 232, 0.22);
+      border-radius: 12px;
+      background: rgba(11, 28, 44, 0.28);
+      color: var(--foam);
+    }
+    .tw-cell {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 0.45rem;
+    }
+    .tw-num {
+      font-size: 1.3rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      min-width: 1.4em;
+      text-align: center;
+      color: #eaf5f2;
+    }
+    .tw-num.tw-ready { color: #7fe3c2; }
+    .tw-label {
+      font-size: 0.8rem;
+      opacity: 0.78;
+    }
+    .tw-sep {
+      opacity: 0.4;
+    }
     .chip {
       appearance: none;
       border: 1px solid rgba(216, 235, 232, 0.35);
