@@ -1,13 +1,75 @@
 {% extends "base.html" %}
 {% block title %}染缸还原台{% endblock %}
 {% block content %}
+<style>
+  .filter-row {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.9rem;
+  }
+  .dye-pick {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin: 0;
+    color: var(--foam);
+    font-size: 0.86rem;
+  }
+  .dye-pick select {
+    margin: 0;
+    width: auto;
+    padding: 0.32rem 1.6rem 0.32rem 0.7rem;
+    font-size: 0.86rem;
+    background: rgba(11, 28, 44, 0.55);
+    color: var(--foam);
+    border: 1px solid rgba(216, 235, 232, 0.35);
+    border-radius: 999px;
+  }
+  .dye-pick select option { color: var(--ink); }
+  .tri-bar {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.55rem;
+    margin-left: auto;
+    padding: 0.3rem 0.85rem;
+    border: 1px solid rgba(216, 235, 232, 0.28);
+    border-radius: 999px;
+    background: rgba(11, 28, 44, 0.35);
+    color: var(--foam);
+    font-size: 0.84rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .tri-bar b { font-size: 1.02rem; color: #9fd4c8; }
+  .tri-bar .sep { opacity: 0.4; }
+</style>
 <div
   x-data="vatBay()"
   x-init="init()"
 >
+  <div class="filter-row">
+    <label class="dye-pick">染种
+      <select :value="filterDye === null ? '' : filterDye"
+              @change="applyDye($event.target.value)"
+              aria-label="按染种精确过滤">
+        <option value="">全部染种</option>
+        <template x-for="d in dyeOptions()" :key="d">
+          <option :value="d" x-text="d"></option>
+        </template>
+      </select>
+    </label>
+    <div class="tri-bar" role="status" aria-label="三路对照">
+      <span><b x-text="view().vatCount"></b> 缸</span>
+      <span class="sep">·</span>
+      <span><b x-text="view().workshopCount"></b> 坊</span>
+      <span class="sep">·</span>
+      <span><b x-text="view().readyCount"></b> 可染色</span>
+    </div>
+  </div>
   <div class="chips" role="toolbar" aria-label="工坊筛选">
     <button type="button" class="chip" :class="{ on: filterWs === null }" @click="setFilter(null)">全部缸位</button>
-    <template x-for="w in workshops" :key="w.id">
+    <template x-for="w in view().workshops" :key="w.id">
       <button
         type="button"
         class="chip"
@@ -23,7 +85,7 @@
   {% endif %}
 
   <div class="bay-scroll" role="list">
-    <template x-for="v in filteredVats()" :key="v.id">
+    <template x-for="v in view().vats" :key="v.id">
       <button
         type="button"
         class="vat-card"
@@ -66,7 +128,7 @@
       </button>
     </template>
   </div>
-  <p class="empty-bay" x-show="filteredVats().length === 0" x-cloak>此工坊暂无染缸。</p>
+  <p class="empty-bay" x-show="view().vats.length === 0" x-cloak>该染种下暂无染缸。</p>
 
   <div class="panel" x-show="selected()" x-cloak x-transition>
     <template x-if="selected()">
@@ -85,6 +147,7 @@
             <h3 style="font-size:1rem;margin:0 0 0.65rem;color:#1f4d6b">登记浸染</h3>
             <form method="post" :action="'/bay/vats/' + selected().id + '/lots'">
               <input type="hidden" name="workshop" :value="filterWs || ''">
+              <input type="hidden" name="dye" :value="filterDye || ''">
               <label>浸染时间
                 <input type="datetime-local" name="dippedAt" required :value="nowLocal()">
               </label>
@@ -101,6 +164,7 @@
             <h3 style="font-size:1rem;margin:0 0 0.65rem;color:#1f4d6b">改缸状态</h3>
             <form method="post" :action="'/bay/vats/' + selected().id + '/status'">
               <input type="hidden" name="workshop" :value="filterWs || ''">
+              <input type="hidden" name="dye" :value="filterDye || ''">
               <label>目标状态
                 <select name="status" required :value="selected().status">
                   <option value="idle">闲置</option>
@@ -130,7 +194,7 @@
     </template>
   </div>
 
-  <p class="rule-foot">工坊只作缸位筛选片；浸染与状态均在缸位展开区内完成，无独立表页。</p>
+  <p class="rule-foot">染种精确过滤（缸数 · 去重工坊 · 可染色同源自同一结果）；工坊只作缸位筛选片，浸染与状态均在缸位展开区内完成，无独立表页。</p>
 </div>
 
 <script>
@@ -139,6 +203,7 @@
       workshops: {{ workshops | tojson }},
       vats: {{ vats | tojson }},
       filterWs: {{ filter_workshop if filter_workshop is not none else 'null' }},
+      filterDye: {{ filter_dye | tojson if filter_dye is not none else 'null' }},
       selectedId: {{ selected_vat if selected_vat is not none else 'null' }},
       init() {
         const params = new URLSearchParams(window.location.search);
@@ -146,33 +211,71 @@
           const w = parseInt(params.get('workshop'), 10);
           if (!isNaN(w)) this.filterWs = w;
         }
+        if (params.has('dye') && this.filterDye === null) {
+          const d = params.get('dye').trim();
+          if (d) this.filterDye = d;   // 精确值，不做包含/模糊
+        }
         if (params.has('vat') && this.selectedId === null) {
           const v = parseInt(params.get('vat'), 10);
           if (!isNaN(v)) this.selectedId = v;
         }
       },
+      dyeOptions() {
+        return [...new Set(this.vats.map(v => v.dyeType))].sort();
+      },
+      // 三路同一函数：染种精确过滤后的缸位、其去重工坊（chips）、可染色子集，
+      // 列表 / chip 栏 / 统计数字全部取自这一个结果，不另行各算一份。
+      view() {
+        const matched = this.filterDye === null
+          ? this.vats
+          : this.vats.filter(v => v.dyeType === this.filterDye);
+        const wsById = new Map(this.workshops.map(w => [w.id, w]));
+        const dyeWorkshops = [...new Set(matched.map(v => v.workshopId))]
+          .map(id => wsById.get(id))
+          .filter(Boolean);
+        const readyVats = matched.filter(v => v.status === 'ready');
+        const shown = this.filterWs === null
+          ? matched
+          : matched.filter(v => v.workshopId === this.filterWs);
+        return {
+          vats: shown,
+          workshops: dyeWorkshops,
+          readyVats,
+          vatCount: matched.length,
+          workshopCount: dyeWorkshops.length,
+          readyCount: readyVats.length,
+        };
+      },
+      applyDye(d) {
+        this.filterDye = d === '' ? null : d;
+        const v = this.view();
+        if (this.filterWs !== null && !v.workshops.some(w => w.id === this.filterWs)) {
+          this.filterWs = null;
+        }
+        if (!this.view().vats.some(x => x.id === this.selectedId)) {
+          this.selectedId = null;
+        }
+        this.syncUrl();
+      },
       setFilter(id) {
         this.filterWs = id;
-        const still = this.filteredVats().some(v => v.id === this.selectedId);
+        const still = this.view().vats.some(v => v.id === this.selectedId);
         if (!still) this.selectedId = null;
+        this.syncUrl();
+      },
+      syncUrl() {
         const url = new URL(window.location.href);
-        if (id === null) url.searchParams.delete('workshop');
-        else url.searchParams.set('workshop', id);
+        if (this.filterWs === null) url.searchParams.delete('workshop');
+        else url.searchParams.set('workshop', this.filterWs);
+        if (this.filterDye === null) url.searchParams.delete('dye');
+        else url.searchParams.set('dye', this.filterDye);
         if (this.selectedId) url.searchParams.set('vat', this.selectedId);
         else url.searchParams.delete('vat');
         history.replaceState(null, '', url.pathname + url.search);
-      },
-      filteredVats() {
-        if (this.filterWs === null) return this.vats;
-        return this.vats.filter(v => v.workshopId === this.filterWs);
       },
       toggle(id) {
         this.selectedId = this.selectedId === id ? null : id;
-        const url = new URL(window.location.href);
-        if (this.selectedId) url.searchParams.set('vat', this.selectedId);
-        else url.searchParams.delete('vat');
-        if (this.filterWs !== null) url.searchParams.set('workshop', this.filterWs);
-        history.replaceState(null, '', url.pathname + url.search);
+        this.syncUrl();
       },
       selected() {
         return this.vats.find(v => v.id === this.selectedId) || null;

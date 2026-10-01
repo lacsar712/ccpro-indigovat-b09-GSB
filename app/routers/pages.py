@@ -1,6 +1,7 @@
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Optional
+from urllib.parse import quote
 import json
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -38,6 +39,17 @@ def render(request: Request, name: str, context: dict, status_code: int = 200):
 
 def _need_login(request: Request, db: Session):
     return get_current_user(request, db)
+
+
+def _bay_url(pk: Optional[int], ws: Optional[int], dye: Optional[str]) -> str:
+    qs = []
+    if pk:
+        qs.append(f"vat={pk}")
+    if ws:
+        qs.append(f"workshop={ws}")
+    if dye:
+        qs.append(f"dye={quote(dye)}")
+    return "/?" + "&".join(qs) if qs else "/"
 
 
 def _spark_points(lots: list[DipLot], width: int = 72, height: int = 28) -> list[dict]:
@@ -93,8 +105,9 @@ def _bay_context(
     workshop_id: Optional[int] = None,
     selected_vat: Optional[int] = None,
     error: Optional[str] = None,
+    filter_dye: Optional[str] = None,
 ):
-    # 始终下发全部缸位；工坊仅作前端 chip 筛选，避免切回「全部」时缺数据
+    # 始终下发全部缸位；工坊/染种仅作前端精确筛选，避免切回「全部」时缺数据
     workshops = db.query(Workshop).order_by(Workshop.name).all()
     vats = (
         db.query(Vat)
@@ -108,6 +121,7 @@ def _bay_context(
         "workshops": [{"id": w.id, "name": w.name, "region": w.region} for w in workshops],
         "vats": [_vat_payload(v) for v in vats],
         "filter_workshop": workshop_id,
+        "filter_dye": filter_dye,
         "selected_vat": selected_vat,
         "error": error,
         "status_labels": STATUS_LABELS,
@@ -119,13 +133,19 @@ def _bay_context(
 async def bay(
     request: Request,
     workshop: Optional[int] = None,
+    dye: Optional[str] = None,
     vat: Optional[int] = None,
     db: Session = Depends(get_db),
 ):
     user = _need_login(request, db)
     if not user:
         return RedirectResponse("/login", status_code=303)
-    return render(request, "bay.html", _bay_context(request, db, user, workshop, vat))
+    filter_dye = dye.strip() if dye and dye.strip() else None
+    return render(
+        request,
+        "bay.html",
+        _bay_context(request, db, user, workshop, vat, filter_dye=filter_dye),
+    )
 
 
 @router.post("/bay/vats/{pk}/status", response_class=HTMLResponse)
@@ -134,6 +154,7 @@ async def bay_vat_status(
     request: Request,
     status: str = Form(...),
     workshop: str = Form(""),
+    dye: str = Form(""),
     db: Session = Depends(get_db),
 ):
     user = _need_login(request, db)
@@ -146,6 +167,7 @@ async def bay_vat_status(
         .first()
     )
     ws = int(workshop) if workshop.strip() else None
+    filter_dye = dye.strip() if dye.strip() else None
     if not item:
         return RedirectResponse("/", status_code=303)
     error = None
@@ -154,14 +176,14 @@ async def bay_vat_status(
         validate_vat_status_change(item, status, latest)
         item.status = status
         db.commit()
-        return RedirectResponse(f"/?vat={pk}" + (f"&workshop={ws}" if ws else ""), status_code=303)
+        return RedirectResponse(_bay_url(pk, ws, filter_dye), status_code=303)
     except VatRuleError as exc:
         error = exc.message
         db.rollback()
     return render(
         request,
         "bay.html",
-        _bay_context(request, db, user, ws, pk, error),
+        _bay_context(request, db, user, ws, pk, error, filter_dye),
         status_code=400,
     )
 
@@ -174,6 +196,7 @@ async def bay_log_lot(
     clothMeters: str = Form(...),
     redoxMv: str = Form(""),
     workshop: str = Form(""),
+    dye: str = Form(""),
     db: Session = Depends(get_db),
 ):
     user = _need_login(request, db)
@@ -181,6 +204,7 @@ async def bay_log_lot(
         return RedirectResponse("/login", status_code=303)
     item = db.get(Vat, pk)
     ws = int(workshop) if workshop.strip() else None
+    filter_dye = dye.strip() if dye.strip() else None
     if not item:
         return RedirectResponse("/", status_code=303)
     error = None
@@ -193,14 +217,14 @@ async def bay_log_lot(
         )
         db.add(lot)
         db.commit()
-        return RedirectResponse(f"/?vat={pk}" + (f"&workshop={ws}" if ws else ""), status_code=303)
+        return RedirectResponse(_bay_url(pk, ws, filter_dye), status_code=303)
     except (ValueError, InvalidOperation) as exc:
         error = f"浸染记录无效：{exc}"
         db.rollback()
     return render(
         request,
         "bay.html",
-        _bay_context(request, db, user, ws, pk, error),
+        _bay_context(request, db, user, ws, pk, error, filter_dye),
         status_code=400,
     )
 
